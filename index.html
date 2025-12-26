@@ -1,143 +1,117 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Nao sou mago Status</title>
-    <style>
-      body {
-        font-family: Arial, sans-serif;
-        background-color: #f5f5f5;
-        color: #333;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: flex-start;
-        min-height: 100vh;
-        margin: 0;
-        padding: 20px;
-      }
-      .container {
-        background-color: #fff;
-        padding: 30px;
-        border-radius: 10px;
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-        text-align: center;
-        width: 100%;
-        max-width: 600px;
-      }
-      .status {
-        font-size: 1.5em;
-        margin-top: 20px;
-      }
-      .alive {
-        color: green;
-      }
-      .dead {
-        color: red;
-      }
-      .deaths {
-        margin-top: 20px;
-        text-align: left;
-      }
-      .death-entry {
-        margin-bottom: 10px;
-        border-bottom: 1px solid #ddd;
-        padding-bottom: 5px;
-      }
-      a {
-        color: #0066cc;
-        text-decoration: none;
-      }
-      a:hover {
-        text-decoration: underline;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <h1>Status of Nao sou mago</h1>
-      <div id="status" class="status">Loading...</div>
-      <div id="all-deaths" class="deaths"></div>
-      <p>
-        <a
-          href="https://www.tibia.com/community/?subtopic=characters&name=Nao+sou+mago"
-          target="_blank"
-          >View on Tibia.com</a
-        >
-      </p>
-    </div>
+<head>
+<meta charset="UTF-8">
+<title>Nao sou mago - Tibia Status</title>
+<style>
+body { font-family: Arial, sans-serif; background-color: #f5f5f5; color: #333; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; min-height: 100vh; margin: 0; padding: 20px; }
+.container { background-color: #fff; padding: 30px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); text-align: center; width: 100%; max-width: 700px; }
+.status { font-size: 1.5em; margin-top: 20px; }
+.alive { color: green; }
+.dead { color: red; }
+.deaths { margin-top: 20px; text-align: left; max-height: 400px; overflow-y: auto; }
+.death-entry { margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+a { color: #0066cc; text-decoration: none; }
+a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Status of Nao sou mago</h1>
+<div id="status" class="status">Loading...</div>
+<div id="all-deaths" class="deaths"></div>
+<p><a href="https://www.tibia.com/community/?subtopic=characters&name=Nao+sou+mago" target="_blank">View on Tibia.com</a></p>
+<audio id="alarm-sound" src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" preload="auto"></audio>
+</div>
 
-    <script>
-      const PLAYER_NAME = "Nao sou mago";
-      const API_URL = `https://api.tibiadata.com/v4/character/${encodeURIComponent(
-        PLAYER_NAME
-      )}`;
-      const RECENT_INTERVAL_HOURS = 24;
+<script>
+const PLAYER_NAME = "Nao sou mago";
+const API_URL = `https://api.tibiadata.com/v4/character/${encodeURIComponent(PLAYER_NAME)}`;
+const REFRESH_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+const RECENT_INTERVAL_HOURS = 24;
 
-      async function fetchStatus() {
-        try {
-          const response = await fetch(API_URL);
-          const data = await response.json();
-          const charData = data.character.character;
-          const deaths = data.character.deaths || [];
-          const now = new Date();
+let lastDeathTimes = []; // store ISO timestamps of deaths to detect new ones
 
-          // Check for recent death
-          let recentDeath = null;
-          deaths.forEach((death) => {
+async function fetchStatus() {
+    try {
+        const response = await fetch(API_URL);
+        if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+        const data = await response.json();
+
+        const charData = data.character.character;
+        const deaths = data.character.deaths || [];
+        const now = new Date();
+
+        // Detect new deaths
+        const currentDeathTimes = deaths.map(d => d.time);
+        const newDeaths = currentDeathTimes.filter(t => !lastDeathTimes.includes(t));
+        if (newDeaths.length > 0 && lastDeathTimes.length > 0) {
+            document.getElementById("alarm-sound").play();
+        }
+        lastDeathTimes = currentDeathTimes;
+
+        // Check for recent death
+        let recentDeath = null;
+        deaths.forEach(death => {
             const deathTime = new Date(death.time);
             const diffHours = (now - deathTime) / 36e5;
             if (diffHours <= RECENT_INTERVAL_HOURS && !recentDeath) {
-              recentDeath = death;
+                recentDeath = death;
             }
-          });
+        });
 
-          // Display status
-          const statusDiv = document.getElementById("status");
-          if (recentDeath) {
-            statusDiv.textContent = `${PLAYER_NAME} has died recently at level ${
-              recentDeath.level
-            } by ${recentDeath.killers.map((k) => k.name).join(", ")}.`;
+        // Update status
+        const statusDiv = document.getElementById("status");
+        if (recentDeath) {
+            statusDiv.textContent = `${PLAYER_NAME} has died recently at level ${recentDeath.level} by ${recentDeath.killers.map(k => k.name).join(", ")}.`;
             statusDiv.className = "status dead";
-          } else if (charData.status.toLowerCase() === "online") {
+        } else if (charData.status?.toLowerCase() === "online") {
             statusDiv.textContent = `${PLAYER_NAME} is alive. Status: online`;
             statusDiv.className = "status alive";
-          } else if (charData.status.toLowerCase() === "offline") {
+        } else if (charData.status?.toLowerCase() === "offline") {
             statusDiv.textContent = `${PLAYER_NAME} is alive. Status: offline`;
             statusDiv.className = "status alive";
-          } else {
+        } else {
             statusDiv.textContent = `${PLAYER_NAME} status unknown`;
             statusDiv.className = "status dead";
-          }
-
-          // Display all deaths
-          const deathsDiv = document.getElementById("all-deaths");
-          if (deaths.length > 0) {
-            deathsDiv.innerHTML = "<h3>All Deaths:</h3>";
-            deaths.forEach((death) => {
-              const deathTime = new Date(death.time);
-              const killers = death.killers.map((k) => k.name).join(", ");
-              const entry = document.createElement("div");
-              entry.className = "death-entry";
-              entry.textContent = `Level ${
-                death.level
-              } | ${deathTime.toLocaleString()} | Killed by: ${killers} | Reason: ${
-                death.reason
-              }`;
-              deathsDiv.appendChild(entry);
-            });
-          } else {
-            deathsDiv.textContent = "No deaths recorded.";
-          }
-        } catch (error) {
-          document.getElementById("status").textContent =
-            "Error fetching status.";
-          console.error(error);
         }
-      }
 
-      fetchStatus();
-      setInterval(fetchStatus, 15 * 60 * 1000); // Refresh every 15 minutes
-    </script>
-  </body>
+        // Display all deaths
+        const deathsDiv = document.getElementById("all-deaths");
+        deathsDiv.innerHTML = "";
+        if (deaths.length > 0) {
+            deathsDiv.innerHTML = "<h3>All Deaths:</h3>";
+            deaths.forEach(death => {
+                const deathTime = new Date(death.time);
+                const killers = death.killers.map(k => k.name).join(", ");
+                const assists = death.assists.map(a => a.name).join(", ");
+                const entry = document.createElement("div");
+                entry.className = "death-entry";
+                entry.innerHTML = `
+Level ${death.level} | ${deathTime.toLocaleString()}<br>
+Killed by: ${killers || "None"}<br>
+Assists: ${assists || "None"}<br>
+Reason: ${death.reason || "Unknown"}
+                `;
+                deathsDiv.appendChild(entry);
+            });
+        } else {
+            deathsDiv.textContent = "No deaths recorded.";
+        }
+
+    } catch (error) {
+        const statusDiv = document.getElementById("status");
+        statusDiv.textContent = "Error fetching status.";
+        statusDiv.className = "status dead";
+        console.error(error);
+    }
+}
+
+// Initial fetch
+fetchStatus();
+
+// Auto-refresh every 15 minutes
+setInterval(fetchStatus, REFRESH_INTERVAL_MS);
+</script>
+</body>
 </html>
